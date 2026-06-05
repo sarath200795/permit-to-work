@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function hasProfile() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    // Approved member of a given org.
+    function isMemberOf(orgId) {
+      return hasProfile() && userDoc().orgId == orgId && userDoc().status == 'approved';
+    }
+    // Approved admin of a given org.
+    function isAdminOf(orgId) {
+      return isMemberOf(orgId) && userDoc().role == 'admin';
+    }
+    // Approved member who can act on permits (admin / engineering / operations).
+    function isApproverOf(orgId) {
+      return isMemberOf(orgId) && userDoc().role in ['admin', 'engineering', 'operations'];
+    }
+
+    // ── Public org index (signup lookup; no sensitive data) ──
+    match /orgIndex/{key} {
+      allow read: if true;
+      allow write: if signedIn();
+    }
+
+    // ── Public permit QR mirror (world-readable scan page) ──
+    // Members of the owning org write it; anyone can read it (so QR scans work).
+    match /permitQr/{token} {
+      allow read: if true;
+      allow create: if signedIn() && isMemberOf(request.resource.data.orgId);
+      allow update: if signedIn() && isMemberOf(resource.data.orgId);
+      allow delete: if false;
+    }
+
+    // ── Users ──
+    match /users/{uid} {
+      // Self, or any approved member of the same org (needed for participant /
+      // approver dropdowns). Role/status changes are admin-only.
+      allow read: if signedIn() && (
+        request.auth.uid == uid ||
+        (hasProfile() && userDoc().status == 'approved' && userDoc().orgId == resource.data.orgId)
+      );
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow update: if signedIn() && hasProfile()
+        && userDoc().role == 'admin'
+        && userDoc().orgId == resource.data.orgId;
+      allow delete: if false;
+    }
+
+    // ── Organizations ──
+    match /organizations/{orgId} {
+      allow read: if isMemberOf(orgId);
+      allow create: if signedIn(); // first admin's doc is created in the same batch
+      allow update: if isAdminOf(orgId);
+      allow delete: if false;
+
+      // Permits — app-level RBAC gates which fields each role may change; rules
+      // enforce org isolation + approved membership.
+      match /permits/{permitId} {
+        allow read, create, update: if isMemberOf(orgId);
+        allow delete: if isAdminOf(orgId);
+
+        // Attached documents (base64 files). Any approved member can attach/read;
+        // approvers/admin can remove.
+        match /documents/{docId} {
+          allow read, create: if isMemberOf(orgId);
+          allow delete: if isApproverOf(orgId);
+          allow update: if false;
+        }
+      }
+
+      // Safety observations (logged via QR scan or in-app). Immutable log.
+      match /observations/{obsId} {
+        allow read, create: if isMemberOf(orgId);
+        allow update, delete: if false;
+      }
+
+      // Permit-number counter + other meta.
+      match /meta/{docId} {
+        allow read, write: if isMemberOf(orgId);
+      }
+
+      // Append-only audit trail.
+      match /auditLogs/{logId} {
+        allow read: if isMemberOf(orgId);
+        allow create: if isMemberOf(orgId);
+        allow update, delete: if false;
+      }
+    }
+  }
+}
