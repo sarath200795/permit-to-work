@@ -44,7 +44,7 @@ export default function Approvals() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: Math.min(i * 0.03, 0.3) }}
                 onClick={() => navigate(`/app/permits/${p.id}`)}
-                className="card p-4 text-left transition hover:shadow-clay-brand"
+                className="card pressable p-4 text-left"
                 style={{ borderLeft: `4px solid ${kind.color}` }}
               >
                 <div className="flex items-start justify-between gap-2">

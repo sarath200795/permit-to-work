@@ -24,7 +24,7 @@ function Kpi({ icon: Icon, label, value, color, onClick, delay }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay }}
       onClick={onClick}
-      className="card flex items-center gap-3 p-4 text-left transition hover:shadow-clay-brand"
+      className="card pressable flex items-center gap-3 p-4 text-left"
     >
       <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-clay-sm" style={{ backgroundColor: color }}>
         <Icon size={20} />

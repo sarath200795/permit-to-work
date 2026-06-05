@@ -29,7 +29,7 @@ function NavItem({ to, icon: Icon, label, badge, onClick }) {
       end
       onClick={onClick}
       className={({ isActive }) =>
-        `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
+        `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out-expo ${
           isActive ? 'text-white' : 'text-ink-300 hover:bg-white/10 hover:text-white'
         }`
       }

@@ -46,6 +46,13 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'Segoe UI', 'sans-serif'],
       },
+      // Stronger custom curves — the built-in CSS easings are too weak to feel
+      // intentional. (Emil Kowalski / animations.dev)
+      transitionTimingFunction: {
+        'out-expo': 'cubic-bezier(0.23, 1, 0.32, 1)',
+        'in-out-strong': 'cubic-bezier(0.77, 0, 0.175, 1)',
+        drawer: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      },
       borderRadius: {
         clay: '1.5rem',
       },
@@ -81,6 +88,8 @@ export default {
         shimmer: 'shimmer 2s infinite',
         float: 'float 6s ease-in-out infinite',
         pulseRing: 'pulseRing 2s infinite',
+        // Faster spin → loading *feels* faster (perceived performance).
+        spin: 'spin 0.7s linear infinite',
       },
     },
   },

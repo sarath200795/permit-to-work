@@ -105,7 +105,7 @@ export default function Permits() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: Math.min(i * 0.02, 0.3) }}
               onClick={() => navigate(`/app/permits/${p.id}`)}
-              className="card flex w-full items-center gap-4 p-4 text-left transition hover:shadow-clay-brand"
+              className="card pressable flex w-full items-center gap-4 p-4 text-left"
             >
               <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-600 shadow-clay-sm">
                 <FileText size={20} />

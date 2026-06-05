@@ -53,7 +53,7 @@ body {
      Raised = light top-left highlight + warm dark bottom-right drop. Inputs
      are recessed (inset). Pressable controls sink on :active. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 shadow-clay-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none active:scale-[0.98] active:shadow-clay-pressed;
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-clay-sm transition-[transform,box-shadow,background-color,color] duration-150 ease-out-expo disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none active:scale-[0.97] active:shadow-clay-pressed;
   }
   .btn-primary {
     @apply btn bg-brand-500 text-white hover:bg-brand-600 shadow-clay-brand;
@@ -68,13 +68,17 @@ body {
     @apply btn bg-red-600 text-white hover:bg-red-700 shadow-[5px_5px_12px_rgba(220,38,38,0.28),-5px_-5px_12px_rgba(255,255,255,0.75)];
   }
   .input {
-    @apply w-full rounded-2xl border border-transparent bg-clay-surface px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 outline-none shadow-clay-inset transition focus:border-brand-300 focus:ring-2 focus:ring-brand-200;
+    @apply w-full rounded-2xl border border-transparent bg-clay-surface px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 outline-none shadow-clay-inset transition-[border-color,box-shadow] duration-150 ease-out-expo focus:border-brand-300 focus:ring-2 focus:ring-brand-200;
   }
   .label {
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-500;
   }
   .card {
     @apply rounded-3xl bg-clay-surface shadow-clay;
+  }
+  /* Clickable surfaces: subtle lift on hover, gentle press feedback. */
+  .pressable {
+    @apply transition-[transform,box-shadow] duration-200 ease-out-expo hover:-translate-y-0.5 hover:shadow-clay-brand active:translate-y-0 active:scale-[0.99];
   }
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold shadow-clay-sm;
@@ -92,6 +96,18 @@ body {
 }
 
 /* ── Print (permit PDF) ──────────────────────────────────────────────────── */
+/* Respect reduced-motion: drop movement, keep things instant & legible. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @media print {
   .no-print { display: none !important; }
   body {
