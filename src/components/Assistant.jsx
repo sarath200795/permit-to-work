@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, lazy, Suspense, Component } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion, useMotionValue, animate } from 'framer-motion'
 import { X, Send, Sparkles, Lightbulb, Move, EyeOff, MessageCircle } from 'lucide-react'
@@ -6,6 +6,18 @@ import { useAuth } from '../context/AuthContext'
 import { usePermits } from '../context/PermitContext'
 import { subscribeObservations } from '../lib/firestore'
 import { pageGuide, suggestedQuestions, answer, askAI, buildAIContext } from '../lib/assistant'
+
+// The 3D mascot is heavy (three.js) — load it only when needed. The auto wrapper
+// uses a realistic rigged .glb if one is present, else the procedural figure.
+const Character3D = lazy(() => import('./Character3DRigged'))
+
+// Falls back to the 2D SVG Sam if WebGL / three fails to load.
+class AvatarBoundary extends Component {
+  constructor(props) { super(props); this.state = { failed: false } }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch() { /* swallow — fallback handles it */ }
+  render() { return this.state.failed ? this.props.fallback : this.props.children }
+}
 
 const lsx = {
   get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
@@ -335,9 +347,19 @@ export default function Assistant() {
         onDragEnd={onDragEnd}
       >
         <button onClick={() => (open ? setOpen(false) : openPanel())} className="relative block" aria-label="Open Safety Bot">
-          <div style={{ transform: `scaleX(${facing})` }}>
-            <Character mode={shownMode} reduced={reduced} />
-          </div>
+          {reduced ? (
+            // 2D drawing: flip horizontally to face the walking direction.
+            <div style={{ transform: `scaleX(${facing})` }}>
+              <Character mode={shownMode} reduced />
+            </div>
+          ) : (
+            // 3D model: it turns itself toward `facing` — never mirror the canvas.
+            <AvatarBoundary fallback={<div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>}>
+              <Suspense fallback={<div style={{ transform: `scaleX(${facing})` }}><Character mode={shownMode} reduced={reduced} /></div>}>
+                <Character3D mode={shownMode} size={68} facing={facing} />
+              </Suspense>
+            </AvatarBoundary>
+          )}
           {attention > 0 && (
             <span className="absolute right-0 top-2 grid h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white ring-2 ring-clay-bg">{attention}</span>
           )}

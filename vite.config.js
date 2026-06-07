@@ -19,6 +19,7 @@ export default defineConfig({
           const m = id.split('node_modules/')[1] || ''
           const pkg = m.startsWith('@') ? m.split('/').slice(0, 2).join('/') : m.split('/')[0]
           if (pkg === 'firebase' || pkg.startsWith('@firebase')) return 'firebase'
+          if (pkg === 'three' || pkg.startsWith('@react-three')) return 'three'
           return undefined
         },
       },
