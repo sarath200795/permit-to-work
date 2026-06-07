@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { usePermits } from '../context/PermitContext'
 import { Modal } from './ui'
+import Assistant from './Assistant'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { IDLE_MS, WARN_MS, formatMMSS } from '../lib/session'
 import { roleMeta } from '../lib/permissions'
@@ -196,6 +197,9 @@ export default function Layout() {
           </div>
         </div>
       </Modal>
+
+      {/* Floating Safety Bot ("Sam") */}
+      <Assistant />
     </div>
   )
 }
