@@ -6,7 +6,7 @@
 // types and the team. Falls back to a server-side AI proxy (askAI) only when no
 // rule matches. Guidance is tailored to permit-to-work and cites HSE HSG250.
 // ─────────────────────────────────────────────────────────────────────────────
-import { derivePermitStatus, isRejected, statusMeta, STATUS } from './permitStatus'
+import { derivePermitStatus, effectiveValidTo, isRejected, statusMeta, STATUS } from './permitStatus'
 
 const HSE =
   'See HSE permit-to-work guidance (HSG250): https://www.hse.gov.uk/pubns/books/hsg250.htm.'
@@ -82,8 +82,8 @@ export function pageGuide(pathname) {
 
 const COMMON_QS = ['Give me a summary', 'What needs my attention?', "What's expired?"]
 const PAGE_QS = {
-  dashboard: ['How many pending approval?', 'Which site is busiest?', 'How many unsafe observations?'],
-  permits: ["What's in progress?", "What's expired?", 'How many closed?'],
+  dashboard: ['Daily update', 'How many pending approval?', 'Which site is busiest?'],
+  permits: ['Daily update', "What's in progress?", "What's expired?"],
   create: ['What PPE do I need for hot work?', 'What is a JSA?', 'When can work begin?'],
   detail: ['How do I extend a permit?', 'Who needs to approve?'],
   approvals: ['What needs my approval?', 'How many pending?'],
@@ -126,6 +126,98 @@ const permitLabel = (p) => `${p.permitNo}${p.typeOfWork ? ` (${p.typeOfWork})` :
 
 const isActive = (s) => s === STATUS.IN_PROGRESS || s === STATUS.EXTENDED || s === STATUS.EXTENDED_IN_PROGRESS
 const isExtended = (s) => s === STATUS.EXTENDED || s === STATUS.EXTENDED_IN_PROGRESS
+
+// ── Date helpers ─────────────────────────────────────────────────────────────
+function toDate(ts) {
+  if (!ts) return null
+  if (typeof ts === 'object' && ts.seconds) return new Date(ts.seconds * 1000)
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+const sameDay = (a, b) => Boolean(a && b && a.toDateString() === b.toDateString())
+const fmtDateTime = (v) => { const d = toDate(v); return d ? d.toLocaleString() : '—' }
+const fmtDate = (v) => { const d = toDate(v); return d ? d.toLocaleDateString() : '—' }
+function remainingText(permit, now = Date.now()) {
+  const to = Date.parse(effectiveValidTo(permit))
+  if (Number.isNaN(to)) return '—'
+  const ms = to - now
+  if (ms <= 0) return 'time elapsed'
+  const h = Math.floor(ms / 3600000)
+  const m = Math.floor((ms % 3600000) / 60000)
+  return `${h}h ${String(m).padStart(2, '0')}m left`
+}
+const decisionDate = (block) => toDate(block?.at)
+function approvedAt(p) {
+  if (!(p.engineering?.status === 'approved' && p.operations?.status === 'approved')) return null
+  const a = decisionDate(p.engineering); const b = decisionDate(p.operations)
+  return a && b ? (a > b ? a : b) : (a || b)
+}
+function closedAt(p) {
+  const c = p.closure
+  if (!(c && c.engineering?.status === 'approved' && c.operations?.status === 'approved')) return null
+  const a = decisionDate(c.engineering); const b = decisionDate(c.operations)
+  return a && b ? (a > b ? a : b) : (a || b)
+}
+
+// ── Full permit details (for "details of <permit no>") ───────────────────────
+function permitDetail(p, observations = []) {
+  const meta = statusMeta(statusOf(p))
+  const myObs = observations.filter((o) => o.permitId === p.id)
+  const dec = (b) => `${b?.status || 'pending'}${b?.byName ? ` by ${b.byName}` : ''}`
+  const lines = [
+    `📋 ${p.permitNo} — ${meta.label}`,
+    `Type: ${p.typeOfWork || '—'}${p.site ? ` · Site: ${p.site}` : ''}`,
+    `Location: ${p.jobLocation || '—'}`,
+    `Issued to: ${p.issuedToName || '—'}${p.issuedToPhone ? ` (${p.issuedToPhone})` : ''}`,
+    `Valid: ${fmtDateTime(p.validFrom)} → ${fmtDateTime(p.validTo)} (${remainingText(p)})`,
+    `Approvals — Engineering: ${dec(p.engineering)}; Operations: ${dec(p.operations)}`,
+  ]
+  if (p.extension) lines.push(`Extension: Eng ${p.extension.engineering?.status || 'pending'}, Ops ${p.extension.operations?.status || 'pending'}${p.extension.newValidTo ? ` → ${fmtDateTime(p.extension.newValidTo)}` : ''}`)
+  if (p.closure) lines.push(`Closure: Eng ${p.closure.engineering?.status || 'pending'}, Ops ${p.closure.operations?.status || 'pending'}`)
+  if (p.closedDueToObservation) lines.push(`⛔ Closed for non-compliance${p.closedDueToObservation.note ? ` — ${p.closedDueToObservation.note}` : ''}`)
+  lines.push(`Hazards: ${(p.hazards || []).length ? list(p.hazards, 5) : 'none'}`)
+  lines.push(`PPE ${(p.ppe || []).length} · Precautions ${(p.precautions || []).length} · JSA ${(p.jsa || []).length} step(s)`)
+  const extras = []
+  if ((p.participants || []).length) extras.push(`${p.participants.length} participant(s)`)
+  if ((p.fireWatchers || []).length) extras.push(`fire watcher: ${p.fireWatchers.map((w) => w.name).join(', ')}`)
+  if (p.confinedWatcher?.name) extras.push(`attendant: ${p.confinedWatcher.name}`)
+  if (extras.length) lines.push(extras.join(' · '))
+  if (myObs.length) lines.push(`Observations: ${myObs.filter((o) => o.type === 'safe').length} safe, ${myObs.filter((o) => o.type === 'unsafe').length} unsafe`)
+  lines.push(`Raised by ${p.createdByName || '—'}${p.createdAt ? ` on ${fmtDate(p.createdAt)}` : ''}`)
+  return lines.join('\n')
+}
+
+// ── Daily update / day-wise status digest ────────────────────────────────────
+export function dailyDigest({ permits = [], observations = [], approvalQueue = [] }, now = new Date()) {
+  const raised = permits.filter((p) => sameDay(toDate(p.createdAt), now))
+  const approvedToday = permits.filter((p) => sameDay(approvedAt(p), now))
+  const closedToday = permits.filter((p) => sameDay(closedAt(p), now) || (p.closedDueToObservation && sameDay(toDate(p.closedDueToObservation.at), now)))
+  const obsToday = observations.filter((o) => sameDay(toDate(o.at), now))
+  const unsafeToday = obsToday.filter((o) => o.type === 'unsafe').length
+
+  let inProg = 0; let awaiting = 0; let expired = 0
+  permits.forEach((p) => {
+    const s = statusOf(p)
+    if (s === STATUS.IN_PROGRESS || isExtended(s)) inProg++
+    else if (s === STATUS.NOT_CLOSED) expired++
+    else if (s === STATUS.DRAFT && !isRejected(p)) awaiting++
+  })
+
+  // Day-wise raised over the last 7 days.
+  const days = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now); d.setDate(now.getDate() - i)
+    const n = permits.filter((p) => sameDay(toDate(p.createdAt), d)).length
+    days.push(`${d.toLocaleDateString(undefined, { weekday: 'short' })} ${n}`)
+  }
+
+  return [
+    `📅 Daily update — ${now.toLocaleDateString()}`,
+    `Today: ${raised.length} raised, ${approvedToday.length} approved, ${closedToday.length} closed, ${obsToday.length} observation(s)${unsafeToday ? ` (${unsafeToday} unsafe)` : ''}.`,
+    `Right now: ${inProg} in progress, ${awaiting} awaiting approval (${approvalQueue.length} need yours), ${expired} expired needing action.`,
+    `Raised (last 7 days): ${days.join(', ')}.`,
+  ].join('\n')
+}
 
 /** Aggregate the live data into the figures the bot reasons over. */
 export function buildStats({ permits = [], observations = [], users = [], sites = [] }) {
@@ -227,14 +319,18 @@ export function answer(question, ctx) {
   if (qn.includes('approval') && /\b(open|show|go|view|see)\b/.test(qn))
     return nav('Opening Approvals.', '/app/approvals')
 
-  // Permit lookup by permit number or job location.
-  const byNo = permits.find((p) => p.permitNo && qn.includes(norm(p.permitNo)))
+  // Permit lookup → full details. Given a permit ID/number we always return the
+  // full breakdown. A bare sequence number ("42") needs a detail-ish word so it
+  // doesn't hijack questions like "last 7 days".
+  const byFullNo = permits.find((p) => p.permitNo && qn.includes(norm(p.permitNo)))
+  const detailWord = /detail|details|show|about|tell|info|status|give me|open|look up|lookup|permit/.test(qn)
+  const bySeq = permits.find((p) => {
+    const seq = (p.permitNo || '').split('-').pop()
+    return seq && (tokens.has(seq) || tokens.has(String(Number(seq))))
+  })
   const byLoc = permits.find((p) => p.jobLocation && norm(p.jobLocation).length >= 4 && qn.includes(norm(p.jobLocation)))
-  const found = byNo || byLoc
-  if (found && /status|about|detail|tell|show|open|valid|when|expire/.test(qn)) {
-    const meta = statusMeta(statusOf(found))
-    return hit(`${permitLabel(found)} — ${meta.label}. Valid until ${found.validTo ? new Date(found.validTo).toLocaleString() : '—'}. Engineering: ${found.engineering?.status || 'pending'}, Operations: ${found.operations?.status || 'pending'}.`)
-  }
+  const lookup = byFullNo || (detailWord && (bySeq || byLoc))
+  if (lookup) return hit(permitDetail(lookup, observations))
 
   // ── 1. Scored intent registry ──────────────────────────────────────────────
   const INTENTS = [
@@ -242,6 +338,11 @@ export function answer(question, ctx) {
       // General permit-to-work / safety guidance — must win its topics
       keywords: ['hierarch', 'control measure', 'types of control', 'confined', 'hot work', 'welding', 'grinding', 'fire watch', 'height', 'fall', 'scaffold', 'ladder', 'harness', 'excavat', 'dig', 'buried', 'trench', 'electric', 'isolat', 'loto', 'lockout', 'live work', 'jsa', 'job safety', 'risk assessment', 'hira', 'ppe', 'what is permit', 'what is ptw', 'how do i extend', 'how to extend', 'how to close', 'guidance', 'best practice', 'hse'],
       run: () => guidanceAnswer(qn) || `For permit-to-work best practice, ${HSE}`,
+    },
+    {
+      // Daily update / day-wise status digest
+      keywords: ['daily update', 'daily', 'day wise', 'day-wise', 'today', 'todays', "today's", 'daily status', 'daily report', 'digest', 'this week', 'last 7 days', 'happened today', 'update for today'],
+      run: () => dailyDigest(ctx || {}),
     },
     {
       keywords: ['attention', 'what should i', 'what do i do', 'what next', 'priorit', 'focus', 'urgent', 'where do i start', 'recommend', 'advice'],
@@ -376,6 +477,13 @@ export function answerText(question, ctx) {
 export function buildAIContext(ctx) {
   const { permits = [], observations = [], approvalQueue = [] } = ctx || {}
   const stats = buildStats(ctx || {})
+  const now = new Date()
+  const today = {
+    raised: permits.filter((p) => sameDay(toDate(p.createdAt), now)).length,
+    approved: permits.filter((p) => sameDay(approvedAt(p), now)).length,
+    closed: permits.filter((p) => sameDay(closedAt(p), now)).length,
+    observations: observations.filter((o) => sameDay(toDate(o.at), now)).length,
+  }
   const recent = [...permits]
     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
     .slice(0, 30)
@@ -391,6 +499,7 @@ export function buildAIContext(ctx) {
     }))
   return {
     totals: { permits: stats.total, awaitingMyApproval: approvalQueue.length },
+    today,
     byStatus: stats.byStatus,
     observations: stats.obs,
     siteBreakdown: stats.siteBreakdown.slice(0, 8).map(([site, count]) => ({ site, count })),
