@@ -25,3 +25,6 @@ firebase-debug.log
 firestore-debug.log
 
 .vercel
+
+# Stray skill artifact (not part of the app)
+claudedesignskills/
