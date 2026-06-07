@@ -263,12 +263,25 @@ export async function getPermitByToken(token) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
-/** Backfill a QR token + mirror for a permit created before the QR feature. */
+/**
+ * Ensure a permit has a QR token AND a current public mirror. Generates the
+ * token if missing, then UPSERTS the full mirror — so it self-heals permits
+ * whose mirror write was previously blocked (e.g. before the permitQr rule was
+ * deployed) even though the token already exists on the permit. Non-fatal.
+ */
 export async function ensurePermitQr(orgId, orgName, permit) {
-  if (!permit?.id || permit.qrToken) return permit?.qrToken || null
-  const token = generateQrToken()
-  await updateDoc(permitRef(orgId, permit.id), { qrToken: token, updatedAt: serverTimestamp() })
-  await setDoc(qrRef(token), fullMirror(orgId, orgName, permit.id, { ...permit, qrToken: token }))
+  if (!permit?.id) return null
+  let token = permit.qrToken
+  try {
+    if (!token) {
+      token = generateQrToken()
+      await updateDoc(permitRef(orgId, permit.id), { qrToken: token, updatedAt: serverTimestamp() })
+    }
+    await setDoc(qrRef(token), fullMirror(orgId, orgName, permit.id, { ...permit, qrToken: token }))
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[Permit to Work] permit QR mirror ensure skipped:', e?.message || e)
+  }
   return token
 }
 

@@ -111,10 +111,12 @@ export default function PermitDetail() {
     return () => { u1(); u2() }
   }, [profile?.orgId, id])
 
-  // Backfill a QR token + mirror for permits created before the QR feature.
+  // Ensure this permit has a QR token + a current public mirror (self-heals
+  // permits whose mirror write was previously blocked). Once per permit id.
   useEffect(() => {
-    if (!profile?.orgId || !permit || permit.qrToken || qrEnsuredRef.current) return
-    qrEnsuredRef.current = true
+    if (!profile?.orgId || !permit) return
+    if (qrEnsuredRef.current === permit.id) return
+    qrEnsuredRef.current = permit.id
     ensurePermitQr(profile.orgId, profile.orgName, permit).catch(() => {})
   }, [profile?.orgId, profile?.orgName, permit])
 
