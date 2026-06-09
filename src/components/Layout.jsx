@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Link, Outlet, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard,
@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext'
 import { usePermits } from '../context/PermitContext'
 import { Modal } from './ui'
 import Assistant from './Assistant'
+import { LEGAL_PAGES } from '../lib/legal'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { IDLE_MS, WARN_MS, formatMMSS } from '../lib/session'
 import { roleMeta } from '../lib/permissions'
@@ -175,8 +176,11 @@ export default function Layout() {
           <Outlet />
         </main>
 
-        <footer className="no-print mx-auto max-w-7xl px-4 py-6 text-xs text-ink-400 sm:px-6 lg:px-8">
-          © {new Date().getFullYear()} Permit to Work
+        <footer className="no-print mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-6 text-xs text-ink-400 sm:px-6 lg:px-8">
+          <span>© {new Date().getFullYear()} Permit to Work</span>
+          {LEGAL_PAGES.map((p) => (
+            <Link key={p.kind} to={p.path} className="hover:text-ink-700">{p.label}</Link>
+          ))}
         </footer>
       </div>
 
