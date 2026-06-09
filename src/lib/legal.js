@@ -8,7 +8,7 @@ export const LEGAL = {
   productName: 'Permit to Work',
   contactEmail: 'sarath200795@gmail.com',
   jurisdiction: 'India',
-  effectiveDate: '8th June 2026',
+  effectiveDate: '9th June 2026',
 }
 
 // The four legal pages + their routes (used for nav + cross-links).
