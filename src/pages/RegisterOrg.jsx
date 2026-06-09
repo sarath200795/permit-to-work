@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, User, Building2, MapPin, Phone, ArrowRight, ShieldCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,10 +8,15 @@ import { useAuth } from '../context/AuthContext'
 import { authErrorMessage } from '../lib/authErrors'
 
 export default function RegisterOrg() {
-  const { registerOrganization } = useAuth()
+  const { registerOrganization, loading, isAuthed, isApproved } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({ orgName: '', address: '', name: '', email: '', phone: '', password: '' })
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (loading || !isAuthed || !isApproved) return
+    navigate('/app/dashboard', { replace: true })
+  }, [loading, isAuthed, isApproved, navigate])
 
   const onSubmit = async (e) => {
     e.preventDefault()

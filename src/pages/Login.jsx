@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, Lock, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,12 +7,23 @@ import { Spinner } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { authErrorMessage } from '../lib/authErrors'
 
+// Only follow `from` for in-app deep links (e.g. the QR observation flow);
+// otherwise always land on the dashboard.
+const targetFrom = (from) => (from && /^\/(app|permit)\b/.test(from) ? from : '/app/dashboard')
+
 export default function Login() {
-  const { login } = useAuth()
+  const { login, loading, isAuthed, isApproved } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [form, setForm] = useState({ email: '', password: '' })
   const [busy, setBusy] = useState(false)
+
+  // Already signed in & approved? Don't show the form — go to the dashboard.
+  // (Pending users are routed to /pending by ProtectedRoute.)
+  useEffect(() => {
+    if (loading || !isAuthed || !isApproved) return
+    navigate(targetFrom(location.state?.from?.pathname), { replace: true })
+  }, [loading, isAuthed, isApproved, navigate, location.state])
 
   const onSubmit = async (e) => {
     e.preventDefault()
@@ -20,7 +31,7 @@ export default function Login() {
     try {
       await login(form)
       toast.success('Welcome back!')
-      navigate(location.state?.from?.pathname || '/app/dashboard', { replace: true })
+      navigate(targetFrom(location.state?.from?.pathname), { replace: true })
     } catch (err) {
       toast.error(authErrorMessage(err))
     } finally {

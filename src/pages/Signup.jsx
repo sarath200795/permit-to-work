@@ -9,8 +9,13 @@ import { authErrorMessage } from '../lib/authErrors'
 import { listOrganizations } from '../lib/firestore'
 
 export default function Signup() {
-  const { signUpMember } = useAuth()
+  const { signUpMember, loading, isAuthed, isApproved } = useAuth()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (loading || !isAuthed || !isApproved) return
+    navigate('/app/dashboard', { replace: true })
+  }, [loading, isAuthed, isApproved, navigate])
   const [form, setForm] = useState({ orgId: '', name: '', email: '', phone: '', password: '' })
   const [busy, setBusy] = useState(false)
   const [orgs, setOrgs] = useState([])
