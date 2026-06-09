@@ -8,8 +8,13 @@ import { useAuth } from '../context/AuthContext'
 import { authErrorMessage } from '../lib/authErrors'
 
 // Only follow `from` for in-app deep links (e.g. the QR observation flow);
-// otherwise always land on the dashboard.
-const targetFrom = (from) => (from && /^\/(app|permit)\b/.test(from) ? from : '/app/dashboard')
+// otherwise always land on the dashboard. Preserves the query string so the
+// observation intent (?observe=1) survives the round-trip.
+const targetFrom = (from) => {
+  const path = from?.pathname
+  if (path && /^\/(app|permit)\b/.test(path)) return `${path}${from.search || ''}`
+  return '/app/dashboard'
+}
 
 export default function Login() {
   const { login, loading, isAuthed, isApproved } = useAuth()
@@ -22,7 +27,7 @@ export default function Login() {
   // (Pending users are routed to /pending by ProtectedRoute.)
   useEffect(() => {
     if (loading || !isAuthed || !isApproved) return
-    navigate(targetFrom(location.state?.from?.pathname), { replace: true })
+    navigate(targetFrom(location.state?.from), { replace: true })
   }, [loading, isAuthed, isApproved, navigate, location.state])
 
   const onSubmit = async (e) => {
@@ -31,7 +36,7 @@ export default function Login() {
     try {
       await login(form)
       toast.success('Welcome back!')
-      navigate(targetFrom(location.state?.from?.pathname), { replace: true })
+      navigate(targetFrom(location.state?.from), { replace: true })
     } catch (err) {
       toast.error(authErrorMessage(err))
     } finally {

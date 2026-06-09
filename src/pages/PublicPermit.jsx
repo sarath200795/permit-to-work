@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -61,11 +61,26 @@ export default function PublicPermit() {
   const [obsOpen, setObsOpen] = useState(false)
   const [obs, setObs] = useState({ type: 'safe', note: '' })
   const [busy, setBusy] = useState(false)
+  const autoOpenedRef = useRef(false)
 
   useEffect(() => {
     if (!token) return undefined
     return subscribePermitByToken(token, setPermit, () => setPermit(null))
   }, [token])
+
+  // Arrived back from the QR "log in to add observation" flow (?observe=1) — as
+  // soon as we're a signed-in member of the permit's org, open the form.
+  const wantsObserve = new URLSearchParams(location.search).get('observe') === '1'
+  useEffect(() => {
+    if (autoOpenedRef.current || !wantsObserve || !permit) return
+    const member = isAuthed && isApproved && profile?.orgId === permit.orgId
+    const closed = [STATUS.CLOSED, STATUS.CLOSED_NONCOMPLIANCE].includes(derivePermitStatus(permit))
+    if (member && !closed) {
+      autoOpenedRef.current = true
+      setObs({ type: 'safe', note: '' })
+      setObsOpen(true)
+    }
+  }, [wantsObserve, permit, isAuthed, isApproved, profile])
 
   const cd = useCountdown(permit)
 
@@ -90,7 +105,8 @@ export default function PublicPermit() {
 
   const onLogObservation = () => {
     if (!isAuthed) {
-      navigate('/login', { state: { from: location } })
+      // Come back to THIS permit and auto-open the observation form after login.
+      navigate('/login', { state: { from: { pathname: location.pathname, search: '?observe=1' } } })
       return
     }
     setObs({ type: 'safe', note: '' })
