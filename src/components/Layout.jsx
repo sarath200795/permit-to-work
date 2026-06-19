@@ -68,7 +68,7 @@ export default function Layout() {
 
   const doLogout = async () => {
     await signOut()
-    navigate('/login')
+    navigate('/login', { replace: true })
   }
 
   const { warning, remainingMs, stayActive } = useIdleTimeout({
