@@ -35,7 +35,7 @@ export default function Observations() {
 
   return (
     <div>
-      <PageHeader icon={Eye} title="Observations" subtitle="Safety observations logged against permits" />
+      <PageHeader icon={Eye} title="Observations" subtitle="Safety observations logged against permits" tourId="observations-header" />
 
       <div className="mb-5 flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (

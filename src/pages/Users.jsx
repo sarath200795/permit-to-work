@@ -30,7 +30,7 @@ export default function Users() {
 
   return (
     <div>
-      <PageHeader icon={UsersIcon} title="Users" subtitle="Approve teammates and assign their role" />
+      <PageHeader icon={UsersIcon} title="Users" subtitle="Approve teammates and assign their role" tourId="users-header" />
 
       {/* Pending approvals */}
       <div className="mb-6">

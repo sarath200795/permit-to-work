@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense, Component } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion, useMotionValue, animate } from 'framer-motion'
-import { X, Send, Sparkles, Lightbulb, Move, EyeOff, MessageCircle, ChevronRight, ChevronLeft, Compass } from 'lucide-react'
+import { X, Send, Sparkles, Lightbulb, Move, EyeOff, MessageCircle, ArrowRight, ArrowLeft, Compass } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { usePermits } from '../context/PermitContext'
 import { subscribeObservations } from '../lib/firestore'
-import { pageGuide, suggestedQuestions, answer, askAI, buildAIContext, TOUR_STEPS } from '../lib/assistant'
+import { pageGuide, suggestedQuestions, answer, askAI, buildAIContext } from '../lib/assistant'
 
 // The 3D mascot is heavy (three.js) — load it only when needed. The auto wrapper
 // uses a realistic rigged .glb if one is present, else the procedural figure.
@@ -25,6 +25,24 @@ const lsx = {
 }
 const loop = (d) => ({ duration: d, repeat: Infinity, ease: 'easeInOut' })
 const IDLE_SLEEP_MS = 3 * 60 * 1000
+
+// ── First-login walkthrough ──────────────────────────────────────────────────
+// Sam actually navigates the app and spotlights real on-page elements. Each step
+// optionally has a `route` (Sam navigates there first) and a `sel` (a data-tour
+// target to highlight, polled for after navigation since pages are lazy-loaded).
+// `place` steps have no target — Sam stands centre-stage (welcome) or at his home
+// corner (finale). If a target never appears, the step degrades to a centred card.
+const TOUR_BASE = [
+  { place: 'center', title: "Hi, I'm Sam 👷", text: "I'm your safety guide. Let me walk you through Permit to Work — it only takes about 30 seconds." },
+  { route: '/app/dashboard', sel: '[data-tour="dash-kpis"]', title: 'Your KPIs', text: 'These tiles track permits in progress, expiring and not-closed, plus safe vs unsafe observations — your safety pulse at a glance.' },
+  { route: '/app/dashboard', sel: '[data-tour="dash-charts"]', title: 'Charts & insights', text: 'Status, work-type, site and trend charts. Use the Site filter at the top to focus the whole dashboard.' },
+  { route: '/app/permits', sel: '[data-tour="permits-header"]', title: 'Permits', text: 'Every permit with its live status. Filter or search, and scan a permit’s QR on site to log an observation.' },
+  { route: '/app/permits/new', sel: '[data-tour="newpermit-header"]', title: 'Raise a permit', text: 'Start here: pick the work type, complete the JSA, add participants, then send it for Engineering & Operations sign-off.' },
+  { route: '/app/approvals', sel: '[data-tour="approvals-header"]', title: 'Approvals', text: 'Permits awaiting your team’s decision land here — approve or reject each with a note.' },
+  { route: '/app/observations', sel: '[data-tour="observations-header"]', title: 'Observations', text: 'Safe and unsafe observations logged via QR or in-app. An unsafe one closes its permit for non-compliance.' },
+]
+const TOUR_ADMIN = { route: '/app/users', sel: '[data-tour="users-header"]', title: 'Users (Admin)', text: 'Approve new sign-ups here and set each person’s role: Engineering, Operations or Technician.' }
+const TOUR_FINALE = { route: '/app/dashboard', place: 'home', title: 'I’m always here', text: 'Tap me anytime to ask things like “what needs my approval?” or “what’s expired?”. Enjoy Permit to Work!' }
 
 // Orange hi-vis "Sam": white/yellow hard hat + orange vest, two-segment arms.
 const SKIN = '#e8b48f', SKIN_D = '#c98b62', HAT = '#facc15', HAT_D = '#ca8a04'
@@ -170,7 +188,7 @@ function Bubble({ from, children }) {
 export default function Assistant() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { profile } = useAuth()
+  const { profile, isAdmin } = useAuth()
   const { permits, users, sites, approvalQueue } = usePermits()
   const reduced = useReducedMotion()
   const uid = profile?.uid || 'anon'
@@ -194,12 +212,11 @@ export default function Assistant() {
   const [asleep, setAsleep] = useState(false)
   const [pinned, setPinned] = useState(() => lsx.get(`ptw:bot:pinned:${uid}`) === '1')
 
-  // First-login guided tour. tourStep is null when inactive, else the step index.
-  const [tourStep, setTourStep] = useState(null)
-  const [spot, setSpot] = useState(null) // spotlight rect for the current step's target
-  const tourInitRef = useRef(false)
-  const tourActive = tourStep !== null
-  const tourData = tourActive ? TOUR_STEPS[tourStep] : null
+  // Guided first-login tour.
+  const [tour, setTour] = useState(null) // null | { step }
+  const [tourRect, setTourRect] = useState(null) // highlighted target's screen rect
+  const tourSteps = useMemo(() => [...TOUR_BASE, ...(isAdmin ? [TOUR_ADMIN] : []), TOUR_FINALE], [isAdmin])
+  const tourStartedRef = useRef(false)
 
   const savedPos = useMemo(() => { try { return JSON.parse(lsx.get(`ptw:bot:pos:${uid}`) || 'null') } catch { return null } }, [uid])
   const mx = useMotionValue(savedPos?.x ?? 80)
@@ -228,18 +245,7 @@ export default function Assistant() {
   // Movement / pose state machine.
   useEffect(() => {
     if (!enabled) return undefined
-    // Guided tour drives Sam across the page, one step at a time (highest priority).
-    if (tourActive) {
-      const vw = typeof window !== 'undefined' ? window.innerWidth : 1000
-      const target = Math.min(Math.max(Math.round((tourData.xPct ?? 0.5) * vw) - 34, 20), vw - 90)
-      setFacing(target >= mx.get() ? 1 : -1)
-      if (reduced) { mx.set(target); my.set(0); setMode('wave'); return undefined }
-      setMode('walk')
-      const a = animate(mx, target, { duration: 0.9, ease: 'linear' })
-      animate(my, 0, { duration: 0.4 })
-      const t = setTimeout(() => setMode('wave'), 950)
-      return () => { if (a?.stop) a.stop(); clearTimeout(t) }
-    }
+    if (tour) return undefined // the tour drives Sam's position/pose
     if (asleep) { setMode('sleep'); return undefined }
     if (open || tip) {
       if (!pinned) { setFacing(-1); animate(mx, homeX(), { duration: 0.7, ease: 'linear' }); animate(my, 0, { duration: 0.4 }) }
@@ -274,14 +280,14 @@ export default function Assistant() {
     }
     t = setTimeout(step, 1400)
     return () => { alive = false; clearTimeout(t); if (anim?.stop) anim.stop() }
-  }, [enabled, asleep, open, tip, writingPage, reduced, pinned, mx, my, tourActive, tourData])
+  }, [enabled, tour, asleep, open, tip, writingPage, reduced, pinned, mx, my])
 
   // Greeting (once per page load) → then per-page tips.
   useEffect(() => {
     if (!enabled || open) return undefined
     // While the first-run tour is pending or playing, it owns the stage — no
     // greeting or page tips until the user has finished (or skipped) it.
-    if (tourActive || lsx.get(`ptw:bot:tour:${uid}`) !== '1') return undefined
+    if (tour || lsx.get(`ptw:bot:tour:${uid}`) !== '1') return undefined
     if (!greetedRef.current) {
       greetedRef.current = true
       const t = setTimeout(() => {
@@ -293,53 +299,74 @@ export default function Assistant() {
     const seenKey = `ptw:bot:tip:${uid}:${guide.title}`
     if (lsx.get(seenKey) !== '1') { const t = setTimeout(() => setTip({ title: guide.title, text: guide.tips[0] }), 900); return () => clearTimeout(t) }
     return undefined
-  }, [location.pathname, open, uid, guide, enabled, tourActive])
+  }, [location.pathname, open, uid, guide, enabled, tour])
 
-  // Kick off the guided tour once, the first time an approved user lands here.
+  // Auto-start the walkthrough once, on a user's very first visit.
+  const tourKey = `ptw:bot:tour:${uid}`
   useEffect(() => {
-    if (!enabled || tourInitRef.current || !profile) return undefined
-    if (lsx.get(`ptw:bot:tour:${uid}`) === '1') return undefined
-    tourInitRef.current = true
-    setTip(null)
-    setAsleep(false)
-    const t = setTimeout(() => setTourStep(0), 1300)
+    if (!enabled || tourStartedRef.current || !profile) return undefined
+    if (lsx.get(tourKey) === '1') return undefined
+    tourStartedRef.current = true
+    const t = setTimeout(() => { setOpen(false); setTip(null); setTour({ step: 0 }) }, 1100)
     return () => clearTimeout(t)
-  }, [enabled, profile, uid])
+  }, [enabled, profile, uid, tourKey])
 
-  // On each tour step, navigate to the section being explained and wake Sam.
+  // Drive the tour: navigate to the step's page, then poll for its on-page target
+  // (pages are lazy-loaded), spotlight it and move Sam beside the bubble.
   useEffect(() => {
-    if (tourStep === null) return
-    lastRef.current = Date.now()
-    setAsleep(false)
-    const step = TOUR_STEPS[tourStep]
-    if (step.route && location.pathname !== step.route) navigate(step.route)
-  }, [tourStep]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!tour) return undefined
+    const stepDef = tourSteps[tour.step]
+    let cancelled = false
+    let pollT
+    const needsNav = stepDef?.route && window.location.pathname !== stepDef.route
+    if (needsNav) navigate(stepDef.route)
+    setMode('walk'); setTourRect(null)
+    lastRef.current = Date.now(); setAsleep(false)
 
-  // Measure the spotlight target for the current step (after nav/layout settle).
-  useEffect(() => {
-    if (tourStep === null || !tourData?.target) { setSpot(null); return undefined }
-    const measure = () => {
-      const el = document.querySelector(`[data-tour="${tourData.target}"]`)
-      const r = el?.getBoundingClientRect()
-      setSpot(r && r.width && r.height ? { top: r.top, left: r.left, width: r.width, height: r.height } : null)
+    const clampY = (y, vh) => Math.min(0, Math.max(-(vh - 170), y))
+    const place = () => {
+      const vw = window.innerWidth || 1000
+      const vh = window.innerHeight || 800
+      if (stepDef?.sel) {
+        const el = document.querySelector(stepDef.sel)
+        const r = el?.getBoundingClientRect()
+        if (!r || r.width === 0 || r.height === 0) return false // not mounted yet
+        setTourRect(r)
+        const below = r.bottom + 188 < vh
+        const bTop = below ? r.bottom + 14 : Math.max(12, r.top - 196)
+        const bLeft = Math.min(Math.max(r.left, 16), vw - 300)
+        setFacing(1)
+        animate(mx, Math.max(8, bLeft - 84), { duration: 0.6, ease: 'easeInOut' })
+        animate(my, clampY(bTop + 80 - vh + 62, vh), { duration: 0.6, ease: 'easeInOut' })
+        return true
+      }
+      setTourRect(null)
+      if (stepDef?.place === 'home') {
+        setFacing(-1); animate(mx, homeX(), { duration: 0.6, ease: 'easeInOut' }); animate(my, 0, { duration: 0.5, ease: 'easeInOut' })
+      } else {
+        setFacing(1); animate(mx, vw / 2 - 40, { duration: 0.7, ease: 'easeInOut' }); animate(my, clampY(-(vh / 2 - 90), vh), { duration: 0.7, ease: 'easeInOut' })
+      }
+      return true
     }
-    const t = setTimeout(measure, 380)
-    window.addEventListener('resize', measure)
-    return () => { clearTimeout(t); window.removeEventListener('resize', measure) }
-  }, [tourStep, tourData, location.pathname])
 
-  const endTour = () => { setTourStep(null); setSpot(null); lsx.set(`ptw:bot:tour:${uid}`, '1') }
-  const nextTour = () => {
-    if (tourStep >= TOUR_STEPS.length - 1) {
-      const finish = TOUR_STEPS[tourStep]?.openPanel
-      endTour()
-      if (finish) openPanel()
-      return
+    let tries = 0
+    const tick = () => {
+      if (cancelled) return
+      if (place() || tries++ >= 32) { setTimeout(() => !cancelled && setMode('wave'), 350); return }
+      pollT = setTimeout(tick, 110)
     }
-    setTourStep((s) => s + 1)
-  }
-  const prevTour = () => setTourStep((s) => Math.max(0, s - 1))
-  const startTour = () => { setOpen(false); setTip(null); setAsleep(false); setTourStep(0) }
+    pollT = setTimeout(tick, needsNav ? 240 : 40)
+
+    const onResize = () => !cancelled && place()
+    window.addEventListener('resize', onResize)
+    return () => { cancelled = true; clearTimeout(pollT); window.removeEventListener('resize', onResize) }
+  }, [tour, tourSteps, navigate, mx, my])
+
+  // Tour controls.
+  const endTour = () => { lsx.set(tourKey, '1'); setTour(null); setTourRect(null); setMode('idle') }
+  const nextTour = () => { if (tour && tour.step < tourSteps.length - 1) setTour({ step: tour.step + 1 }); else endTour() }
+  const backTour = () => { if (tour && tour.step > 0) setTour({ step: tour.step - 1 }) }
+  const startTour = () => { setOpen(false); setTip(null); setPinned(false); setTour({ step: 0 }) }
 
   const dismissTip = () => {
     if (tip && !tip.greeting) lsx.set(`ptw:bot:tip:${uid}:${guide.title}`, '1')
@@ -400,38 +427,21 @@ export default function Assistant() {
     )
   }
 
-  const shownMode = asking ? 'think' : tourActive ? mode : open ? 'wave' : asleep ? 'sleep' : mode
+  const shownMode = asking ? 'think' : tour ? mode : open ? 'wave' : asleep ? 'sleep' : mode
 
   return (
     <div className="no-print">
-      {/* Guided-tour dimmer + spotlight (pointer-events off so nothing is blocked) */}
-      {tourActive && (
-        <div className="pointer-events-none fixed inset-0 z-40" aria-hidden>
-          {spot ? (
-            <motion.div
-              initial={false}
-              animate={{ top: spot.top - 6, left: spot.left - 6, width: spot.width + 12, height: spot.height + 12 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-              className="absolute rounded-2xl ring-2 ring-brand-400"
-              style={{ boxShadow: '0 0 0 9999px rgba(15,23,42,0.55)' }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-ink-950/45" />
-          )}
-        </div>
-      )}
-
-      {/* Draggable walking character */}
+      {/* Draggable walking character (drag disabled & lifted above the dim during the tour) */}
       <motion.div
-        className="fixed bottom-1 left-0 z-40 cursor-grab active:cursor-grabbing"
+        className={`fixed bottom-1 left-0 cursor-grab active:cursor-grabbing ${tour ? 'z-50' : 'z-40'}`}
         style={{ x: mx, y: my }}
-        drag
+        drag={!tour}
         dragMomentum={false}
         dragElastic={0.04}
         onDragStart={() => { setMode('idle'); lastRef.current = Date.now(); setAsleep(false) }}
         onDragEnd={onDragEnd}
       >
-        <button onClick={() => (open ? setOpen(false) : openPanel())} className="relative block" aria-label="Open Safety Bot">
+        <button onClick={() => { if (tour) return; open ? setOpen(false) : openPanel() }} className="relative block" aria-label="Open Safety Bot">
           {reduced ? (
             // 2D drawing: flip horizontally to face the walking direction.
             <div style={{ transform: `scaleX(${facing})` }}>
@@ -450,6 +460,70 @@ export default function Assistant() {
           )}
         </button>
       </motion.div>
+
+      {/* First-login guided tour: dim/spotlight + Sam-led explanation bubble */}
+      <AnimatePresence>
+        {tour && (() => {
+          const stepDef = tourSteps[tour.step]
+          const isLast = tour.step === tourSteps.length - 1
+          const vw = typeof window !== 'undefined' ? window.innerWidth : 1000
+          const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+          const bubble = tourRect
+            ? {
+                left: Math.min(Math.max(tourRect.left, 16), vw - 300),
+                top: tourRect.bottom + 188 < vh ? tourRect.bottom + 14 : Math.max(12, tourRect.top - 196),
+              }
+            : stepDef.place === 'home'
+              ? { right: 20, bottom: 184 }
+              : { left: Math.max(12, vw / 2 - 144), top: vh / 2 + 76 }
+          return (
+            <motion.div key="tour" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40">
+              {/* Click blocker so the tour stays in control */}
+              <div className="absolute inset-0" />
+              {/* Spotlight on the target, or a flat dim for placed steps */}
+              {tourRect ? (
+                <motion.div
+                  layout
+                  className="pointer-events-none absolute rounded-xl ring-2 ring-brand-400"
+                  style={{
+                    top: tourRect.top - 6, left: tourRect.left - 6,
+                    width: tourRect.width + 12, height: tourRect.height + 12,
+                    boxShadow: '0 0 0 9999px rgba(15,23,42,0.6)',
+                  }}
+                />
+              ) : (
+                <div className="pointer-events-none absolute inset-0 bg-ink-950/55" />
+              )}
+              {/* Explanation bubble */}
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                style={bubble}
+                className="absolute w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-clay-200 bg-clay-surface p-4 shadow-clay"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-600"><Compass size={13} /> Tour · {tour.step + 1}/{tourSteps.length}</span>
+                  <button onClick={endTour} className="rounded-lg p-1 text-ink-400 hover:bg-clay-100" aria-label="Skip tour"><X size={14} /></button>
+                </div>
+                <p className="mt-1.5 text-sm font-extrabold text-ink-900">{stepDef.title}</p>
+                <p className="mt-1 text-xs leading-relaxed text-ink-500">{stepDef.text}</p>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <button onClick={endTour} className="text-xs font-semibold text-ink-400 hover:text-ink-700">Skip</button>
+                  <div className="flex items-center gap-2">
+                    {tour.step > 0 && (
+                      <button onClick={backTour} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-600 hover:bg-clay-100 hover:text-ink-900"><ArrowLeft size={13} /> Back</button>
+                    )}
+                    <button onClick={nextTour} className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600">
+                      {isLast ? 'Got it' : (<>Next <ArrowRight size={13} /></>)}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
 
       {/* Tip / welcome bubble */}
       <AnimatePresence>
@@ -519,46 +593,6 @@ export default function Assistant() {
               </button>
               <button onClick={startTour} className="inline-flex items-center gap-1 hover:text-ink-700"><Compass size={12} /> Replay tour</button>
               <button onClick={disableGuide} className="inline-flex items-center gap-1 hover:text-ink-700"><EyeOff size={12} /> Hide bot</button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Guided-tour coach bubble */}
-      <AnimatePresence>
-        {tourActive && (
-          <motion.div
-            key={tourStep}
-            initial={{ opacity: 0, y: 12, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.12 } }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-            className="fixed bottom-32 left-1/2 z-50 w-[320px] max-w-[calc(100vw-2.5rem)] -translate-x-1/2 rounded-2xl border border-clay-200 bg-clay-surface p-4 shadow-clay"
-          >
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-600">
-                <Compass size={13} /> Tour · {tourStep + 1}/{TOUR_STEPS.length}
-              </span>
-              <button onClick={endTour} className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-ink-400 hover:bg-clay-100 hover:text-ink-700">
-                Skip <X size={13} />
-              </button>
-            </div>
-            <p className="mt-1.5 text-sm font-bold text-ink-900">{tourData.title}</p>
-            <p className="mt-1 text-xs leading-relaxed text-ink-500">{tourData.text}</p>
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                onClick={prevTour}
-                disabled={tourStep === 0}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-ink-500 hover:bg-clay-100 hover:text-ink-800 disabled:opacity-40"
-              >
-                <ChevronLeft size={14} /> Back
-              </button>
-              <button
-                onClick={nextTour}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600"
-              >
-                {tourStep === TOUR_STEPS.length - 1 ? 'Finish' : 'Next'} <ChevronRight size={14} />
-              </button>
             </div>
           </motion.div>
         )}

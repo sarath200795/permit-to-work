@@ -28,7 +28,7 @@ export default function Approvals() {
 
   return (
     <div>
-      <PageHeader icon={ClipboardCheck} title="Approvals" subtitle="Permits awaiting your team's decision" />
+      <PageHeader icon={ClipboardCheck} title="Approvals" subtitle="Permits awaiting your team's decision" tourId="approvals-header" />
 
       {approvalQueue.length === 0 ? (
         <EmptyState icon={ClipboardCheck} title="Nothing to approve" hint="You're all caught up — new requests for your team will appear here." />
