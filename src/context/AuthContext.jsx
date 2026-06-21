@@ -90,6 +90,12 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     await fbSignOut(auth)
+    // Clear user *and* profile synchronously so the next render (which includes
+    // the redirect to /login) already sees isAuthed === false. Waiting for the
+    // onAuthStateChanged listener leaves auth state briefly stale-true, which
+    // makes Login's "already signed in → dashboard" effect bounce the route and
+    // trip the browser's navigation throttle (blank page on logout).
+    setUser(null)
     setProfile(null)
   }
 

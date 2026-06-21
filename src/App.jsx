@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
 import Layout from './components/Layout'
 import { PermitProvider } from './context/PermitContext'
@@ -37,39 +36,41 @@ function AppShell() {
 }
 
 export default function App() {
-  const location = useLocation()
   if (!isFirebaseConfigured) return <SetupNeeded />
+  // NB: no AnimatePresence/keyed-location wrapper here. With `mode="wait"` the
+  // outgoing route stays mounted during the transition, so a redirect route
+  // (e.g. ProtectedRoute → <Navigate to="/login">) re-fires navigate() on every
+  // render and trips the browser's navigation throttle — a blank page on logout.
+  // Pages animate on enter via their own initial/animate; none use exit anims.
   return (
     <Suspense fallback={<FullScreenLoader label="Loading…" />}>
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
-          <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/register-org" element={<RegisterOrg />} />
-          <Route path="/pending" element={<PendingApproval />} />
-          <Route path="/permit/:token" element={<PublicPermit />} />
-          <Route path="/privacy" element={<Legal kind="privacy" />} />
-          <Route path="/terms" element={<Legal kind="terms" />} />
-          <Route path="/data-retention" element={<Legal kind="retention" />} />
-          <Route path="/cookies" element={<Legal kind="cookies" />} />
+      <Routes>
+        <Route path="/" element={<Navigate to="/app/dashboard" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/register-org" element={<RegisterOrg />} />
+        <Route path="/pending" element={<PendingApproval />} />
+        <Route path="/permit/:token" element={<PublicPermit />} />
+        <Route path="/privacy" element={<Legal kind="privacy" />} />
+        <Route path="/terms" element={<Legal kind="terms" />} />
+        <Route path="/data-retention" element={<Legal kind="retention" />} />
+        <Route path="/cookies" element={<Legal kind="cookies" />} />
 
-          <Route path="/app" element={<AppShell />}>
-            <Route index element={<Navigate to="/app/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="permits" element={<Permits />} />
-            <Route path="permits/new" element={<PermitForm />} />
-            <Route path="permits/:id" element={<PermitDetail />} />
-            <Route path="approvals" element={<Approvals />} />
-            <Route path="observations" element={<Observations />} />
-            <Route path="users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
-            <Route path="sites" element={<ProtectedRoute adminOnly><Sites /></ProtectedRoute>} />
-            <Route path="audit" element={<ProtectedRoute adminOnly><AuditLog /></ProtectedRoute>} />
-          </Route>
+        <Route path="/app" element={<AppShell />}>
+          <Route index element={<Navigate to="/app/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="permits" element={<Permits />} />
+          <Route path="permits/new" element={<PermitForm />} />
+          <Route path="permits/:id" element={<PermitDetail />} />
+          <Route path="approvals" element={<Approvals />} />
+          <Route path="observations" element={<Observations />} />
+          <Route path="users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
+          <Route path="sites" element={<ProtectedRoute adminOnly><Sites /></ProtectedRoute>} />
+          <Route path="audit" element={<ProtectedRoute adminOnly><AuditLog /></ProtectedRoute>} />
+        </Route>
 
-          <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
-        </Routes>
-      </AnimatePresence>
+        <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
+      </Routes>
     </Suspense>
   )
 }
