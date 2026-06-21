@@ -39,6 +39,14 @@ export function teamForRole(role) {
 
 const isOwner = (profile, permit) => profile?.uid && permit?.createdBy === profile.uid
 
+// A user may hold several roles. Read roles[] when present, else the single role.
+const rolesOf = (profile) =>
+  Array.isArray(profile?.roles) && profile.roles.length
+    ? profile.roles
+    : profile?.role
+      ? [profile.role]
+      : []
+
 /**
  * Central capability check.
  *   can(profile, action, permit?)
@@ -47,16 +55,17 @@ const isOwner = (profile, permit) => profile?.uid && permit?.createdBy === profi
  * (Team-scoped decide gating uses canActForTeam below.)
  */
 export function can(profile, action, permit = null) {
-  const role = profile?.role
-  if (!role) return false
-  const approver = isApprover(role)
+  const roles = rolesOf(profile)
+  if (!roles.length) return false
+  const approver = roles.some(isApprover)
+  const admin = roles.includes(ROLES.ADMIN)
 
   switch (action) {
     case 'create':
       return true // every approved role can raise a permit
     case 'manageUsers':
     case 'viewAudit':
-      return isAdmin(role)
+      return admin
     case 'view':
       return approver || isOwner(profile, permit)
     case 'edit':
@@ -82,10 +91,10 @@ export function can(profile, action, permit = null) {
  *    is assigned for that team — only that assigned person.
  */
 export function canActForTeam(profile, permit, team) {
-  const role = profile?.role
-  if (!role) return false
-  if (isAdmin(role)) return true
-  if (teamForRole(role) !== team) return false
+  const roles = rolesOf(profile)
+  if (!roles.length) return false
+  if (roles.includes(ROLES.ADMIN)) return true
+  if (!roles.some((r) => teamForRole(r) === team)) return false
   const assigned = team === TEAMS.ENGINEERING ? permit?.assignedEngineer : permit?.assignedOperator
   if (assigned) return profile.uid === assigned
   return true
