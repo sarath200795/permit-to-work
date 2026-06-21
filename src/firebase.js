@@ -1,3 +1,5 @@
+import { connectAuthEmulator as __connectAuthEmu } from 'firebase/auth'
+import { connectFirestoreEmulator as __connectFsEmu } from 'firebase/firestore'
 import { initializeApp } from 'firebase/app'
 import { getAuth, setPersistence, browserSessionPersistence } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
@@ -43,3 +45,12 @@ if (isFirebaseConfigured) {
 
 export { auth, db }
 export default app
+
+// ── Local emulator wiring (demo / offline dev only) ──────────────────────────
+// When VITE_USE_EMULATOR is "1", point Auth + Firestore at the local Firebase
+// emulators. Guarded by an env flag absent in production builds.
+export const usingEmulator = import.meta.env.VITE_USE_EMULATOR === '1'
+if (usingEmulator && auth && db) {
+  __connectAuthEmu(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
+  __connectFsEmu(db, '127.0.0.1', 8080)
+}
