@@ -24,12 +24,13 @@ import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { IDLE_MS, WARN_MS, formatMMSS } from '../lib/session'
 import { roleMeta } from '../lib/permissions'
 
-function NavItem({ to, icon: Icon, label, badge, onClick }) {
+function NavItem({ to, icon: Icon, label, badge, onClick, tourId }) {
   return (
     <NavLink
       to={to}
       end
       onClick={onClick}
+      data-tour={tourId}
       className={({ isActive }) =>
         `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors duration-150 ease-out-expo ${
           isActive ? 'text-white' : 'text-ink-300 hover:bg-white/10 hover:text-white'
@@ -93,12 +94,12 @@ export default function Layout() {
       </div>
 
       <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-ink-500">Overview</p>
-      <NavItem to="/app/dashboard" icon={LayoutDashboard} label="Dashboard" onClick={close} />
-      <NavItem to="/app/permits" icon={FileText} label="Permits" onClick={close} />
+      <NavItem to="/app/dashboard" icon={LayoutDashboard} label="Dashboard" onClick={close} tourId="dashboard" />
+      <NavItem to="/app/permits" icon={FileText} label="Permits" onClick={close} tourId="permits" />
 
       <p className="px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-widest text-ink-500">Work</p>
-      <NavItem to="/app/permits/new" icon={PlusCircle} label="New Permit" onClick={close} />
-      <NavItem to="/app/approvals" icon={ClipboardCheck} label="Approvals" badge={approvalQueue.length} onClick={close} />
+      <NavItem to="/app/permits/new" icon={PlusCircle} label="New Permit" onClick={close} tourId="new" />
+      <NavItem to="/app/approvals" icon={ClipboardCheck} label="Approvals" badge={approvalQueue.length} onClick={close} tourId="approvals" />
       <NavItem to="/app/observations" icon={Eye} label="Observations" onClick={close} />
 
       {isAdmin && (

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense, Component } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useReducedMotion, useMotionValue, animate } from 'framer-motion'
-import { X, Send, Sparkles, Lightbulb, Move, EyeOff, MessageCircle } from 'lucide-react'
+import { X, Send, Sparkles, Lightbulb, Move, EyeOff, MessageCircle, ChevronRight, ChevronLeft, Compass } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { usePermits } from '../context/PermitContext'
 import { subscribeObservations } from '../lib/firestore'
-import { pageGuide, suggestedQuestions, answer, askAI, buildAIContext } from '../lib/assistant'
+import { pageGuide, suggestedQuestions, answer, askAI, buildAIContext, TOUR_STEPS } from '../lib/assistant'
 
 // The 3D mascot is heavy (three.js) — load it only when needed. The auto wrapper
 // uses a realistic rigged .glb if one is present, else the procedural figure.
@@ -194,6 +194,13 @@ export default function Assistant() {
   const [asleep, setAsleep] = useState(false)
   const [pinned, setPinned] = useState(() => lsx.get(`ptw:bot:pinned:${uid}`) === '1')
 
+  // First-login guided tour. tourStep is null when inactive, else the step index.
+  const [tourStep, setTourStep] = useState(null)
+  const [spot, setSpot] = useState(null) // spotlight rect for the current step's target
+  const tourInitRef = useRef(false)
+  const tourActive = tourStep !== null
+  const tourData = tourActive ? TOUR_STEPS[tourStep] : null
+
   const savedPos = useMemo(() => { try { return JSON.parse(lsx.get(`ptw:bot:pos:${uid}`) || 'null') } catch { return null } }, [uid])
   const mx = useMotionValue(savedPos?.x ?? 80)
   const my = useMotionValue(savedPos?.y ?? 0)
@@ -221,6 +228,18 @@ export default function Assistant() {
   // Movement / pose state machine.
   useEffect(() => {
     if (!enabled) return undefined
+    // Guided tour drives Sam across the page, one step at a time (highest priority).
+    if (tourActive) {
+      const vw = typeof window !== 'undefined' ? window.innerWidth : 1000
+      const target = Math.min(Math.max(Math.round((tourData.xPct ?? 0.5) * vw) - 34, 20), vw - 90)
+      setFacing(target >= mx.get() ? 1 : -1)
+      if (reduced) { mx.set(target); my.set(0); setMode('wave'); return undefined }
+      setMode('walk')
+      const a = animate(mx, target, { duration: 0.9, ease: 'linear' })
+      animate(my, 0, { duration: 0.4 })
+      const t = setTimeout(() => setMode('wave'), 950)
+      return () => { if (a?.stop) a.stop(); clearTimeout(t) }
+    }
     if (asleep) { setMode('sleep'); return undefined }
     if (open || tip) {
       if (!pinned) { setFacing(-1); animate(mx, homeX(), { duration: 0.7, ease: 'linear' }); animate(my, 0, { duration: 0.4 }) }
@@ -255,11 +274,14 @@ export default function Assistant() {
     }
     t = setTimeout(step, 1400)
     return () => { alive = false; clearTimeout(t); if (anim?.stop) anim.stop() }
-  }, [enabled, asleep, open, tip, writingPage, reduced, pinned, mx, my])
+  }, [enabled, asleep, open, tip, writingPage, reduced, pinned, mx, my, tourActive, tourData])
 
   // Greeting (once per page load) → then per-page tips.
   useEffect(() => {
     if (!enabled || open) return undefined
+    // While the first-run tour is pending or playing, it owns the stage — no
+    // greeting or page tips until the user has finished (or skipped) it.
+    if (tourActive || lsx.get(`ptw:bot:tour:${uid}`) !== '1') return undefined
     if (!greetedRef.current) {
       greetedRef.current = true
       const t = setTimeout(() => {
@@ -271,7 +293,53 @@ export default function Assistant() {
     const seenKey = `ptw:bot:tip:${uid}:${guide.title}`
     if (lsx.get(seenKey) !== '1') { const t = setTimeout(() => setTip({ title: guide.title, text: guide.tips[0] }), 900); return () => clearTimeout(t) }
     return undefined
-  }, [location.pathname, open, uid, guide, enabled])
+  }, [location.pathname, open, uid, guide, enabled, tourActive])
+
+  // Kick off the guided tour once, the first time an approved user lands here.
+  useEffect(() => {
+    if (!enabled || tourInitRef.current || !profile) return undefined
+    if (lsx.get(`ptw:bot:tour:${uid}`) === '1') return undefined
+    tourInitRef.current = true
+    setTip(null)
+    setAsleep(false)
+    const t = setTimeout(() => setTourStep(0), 1300)
+    return () => clearTimeout(t)
+  }, [enabled, profile, uid])
+
+  // On each tour step, navigate to the section being explained and wake Sam.
+  useEffect(() => {
+    if (tourStep === null) return
+    lastRef.current = Date.now()
+    setAsleep(false)
+    const step = TOUR_STEPS[tourStep]
+    if (step.route && location.pathname !== step.route) navigate(step.route)
+  }, [tourStep]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Measure the spotlight target for the current step (after nav/layout settle).
+  useEffect(() => {
+    if (tourStep === null || !tourData?.target) { setSpot(null); return undefined }
+    const measure = () => {
+      const el = document.querySelector(`[data-tour="${tourData.target}"]`)
+      const r = el?.getBoundingClientRect()
+      setSpot(r && r.width && r.height ? { top: r.top, left: r.left, width: r.width, height: r.height } : null)
+    }
+    const t = setTimeout(measure, 380)
+    window.addEventListener('resize', measure)
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure) }
+  }, [tourStep, tourData, location.pathname])
+
+  const endTour = () => { setTourStep(null); setSpot(null); lsx.set(`ptw:bot:tour:${uid}`, '1') }
+  const nextTour = () => {
+    if (tourStep >= TOUR_STEPS.length - 1) {
+      const finish = TOUR_STEPS[tourStep]?.openPanel
+      endTour()
+      if (finish) openPanel()
+      return
+    }
+    setTourStep((s) => s + 1)
+  }
+  const prevTour = () => setTourStep((s) => Math.max(0, s - 1))
+  const startTour = () => { setOpen(false); setTip(null); setAsleep(false); setTourStep(0) }
 
   const dismissTip = () => {
     if (tip && !tip.greeting) lsx.set(`ptw:bot:tip:${uid}:${guide.title}`, '1')
@@ -332,10 +400,27 @@ export default function Assistant() {
     )
   }
 
-  const shownMode = asking ? 'think' : open ? 'wave' : asleep ? 'sleep' : mode
+  const shownMode = asking ? 'think' : tourActive ? mode : open ? 'wave' : asleep ? 'sleep' : mode
 
   return (
     <div className="no-print">
+      {/* Guided-tour dimmer + spotlight (pointer-events off so nothing is blocked) */}
+      {tourActive && (
+        <div className="pointer-events-none fixed inset-0 z-40" aria-hidden>
+          {spot ? (
+            <motion.div
+              initial={false}
+              animate={{ top: spot.top - 6, left: spot.left - 6, width: spot.width + 12, height: spot.height + 12 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 30 }}
+              className="absolute rounded-2xl ring-2 ring-brand-400"
+              style={{ boxShadow: '0 0 0 9999px rgba(15,23,42,0.55)' }}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-ink-950/45" />
+          )}
+        </div>
+      )}
+
       {/* Draggable walking character */}
       <motion.div
         className="fixed bottom-1 left-0 z-40 cursor-grab active:cursor-grabbing"
@@ -432,7 +517,48 @@ export default function Assistant() {
               <button onClick={setRoam} className="inline-flex items-center gap-1 hover:text-ink-700" disabled={!pinned}>
                 <Move size={12} /> {pinned ? 'Let Sam roam' : 'Drag Sam to pin him'}
               </button>
+              <button onClick={startTour} className="inline-flex items-center gap-1 hover:text-ink-700"><Compass size={12} /> Replay tour</button>
               <button onClick={disableGuide} className="inline-flex items-center gap-1 hover:text-ink-700"><EyeOff size={12} /> Hide bot</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Guided-tour coach bubble */}
+      <AnimatePresence>
+        {tourActive && (
+          <motion.div
+            key={tourStep}
+            initial={{ opacity: 0, y: 12, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.12 } }}
+            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            className="fixed bottom-32 left-1/2 z-50 w-[320px] max-w-[calc(100vw-2.5rem)] -translate-x-1/2 rounded-2xl border border-clay-200 bg-clay-surface p-4 shadow-clay"
+          >
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-brand-600">
+                <Compass size={13} /> Tour · {tourStep + 1}/{TOUR_STEPS.length}
+              </span>
+              <button onClick={endTour} className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs text-ink-400 hover:bg-clay-100 hover:text-ink-700">
+                Skip <X size={13} />
+              </button>
+            </div>
+            <p className="mt-1.5 text-sm font-bold text-ink-900">{tourData.title}</p>
+            <p className="mt-1 text-xs leading-relaxed text-ink-500">{tourData.text}</p>
+            <div className="mt-3 flex items-center justify-between">
+              <button
+                onClick={prevTour}
+                disabled={tourStep === 0}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-ink-500 hover:bg-clay-100 hover:text-ink-800 disabled:opacity-40"
+              >
+                <ChevronLeft size={14} /> Back
+              </button>
+              <button
+                onClick={nextTour}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600"
+              >
+                {tourStep === TOUR_STEPS.length - 1 ? 'Finish' : 'Next'} <ChevronRight size={14} />
+              </button>
             </div>
           </motion.div>
         )}

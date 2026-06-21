@@ -80,6 +80,54 @@ export function pageGuide(pathname) {
   return GUIDES[pageOf(pathname)] || GUIDES.dashboard
 }
 
+// ── First-login guided tour ───────────────────────────────────────────────────
+// A short walkthrough Sam runs the first time a user reaches the app. Each step
+// optionally navigates to `route` and spotlights the sidebar item `target`
+// ([data-tour="…"]); `xPct` walks Sam across the screen so he visibly guides the
+// user from section to section. The last step hands off to the chat panel.
+export const TOUR_STEPS = [
+  {
+    title: "Hi, I'm Sam 👷",
+    text: "Welcome aboard! Let me show you around in a few quick steps — you can skip anytime.",
+    xPct: 0.5,
+  },
+  {
+    route: '/app/dashboard',
+    target: 'dashboard',
+    title: 'Your dashboard',
+    text: "A live overview of your permits — what's in progress, expiring, or needs attention at a glance.",
+    xPct: 0.14,
+  },
+  {
+    route: '/app/permits',
+    target: 'permits',
+    title: 'All permits',
+    text: 'Every permit with its status. Filter or search, and scan a permit’s QR on site to log an observation.',
+    xPct: 0.34,
+  },
+  {
+    route: '/app/permits/new',
+    target: 'new',
+    title: 'Raise a permit',
+    text: 'Create one here: pick the work type, complete the JSA, then send it for Engineering & Operations sign-off.',
+    xPct: 0.56,
+  },
+  {
+    route: '/app/approvals',
+    target: 'approvals',
+    title: 'Approvals',
+    text: 'Permits awaiting your team’s decision land here — approve or reject each with a note.',
+    xPct: 0.76,
+  },
+  {
+    title: 'Ask me anything',
+    text: 'Tap me anytime for summaries, expiries, observations and HSE guidance. You’re all set! 🎉',
+    xPct: 0.9,
+    openPanel: true,
+  },
+]
+
+
 const COMMON_QS = ['Give me a summary', 'What needs my attention?', "What's expired?"]
 const PAGE_QS = {
   dashboard: ['Daily update', 'How many pending approval?', 'Which site is busiest?'],
