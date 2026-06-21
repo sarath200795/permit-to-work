@@ -124,7 +124,7 @@ export default function Dashboard() {
       </PageHeader>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div data-tour="dash-kpis" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {KPIS.map((k, i) => (
           <Kpi key={k.label} {...k} delay={i * 0.04} onClick={() => navigate(k.to)} />
         ))}
@@ -136,7 +136,7 @@ export default function Dashboard() {
             action={<button className="btn-primary mt-1" onClick={() => navigate('/app/permits/new')}><Plus size={16} /> New Permit</button>} />
         </div>
       ) : (
-        <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div data-tour="dash-charts" className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
           {/* By status */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card p-5">
             <h2 className="mb-4 text-base font-bold text-ink-900">Permits by status</h2>

@@ -199,7 +199,7 @@ export default function PermitForm() {
 
   return (
     <div>
-      <PageHeader icon={ClipboardList} title="New Permit to Work" subtitle="Raise a permit for approval by Engineering & Operations" />
+      <PageHeader icon={ClipboardList} title="New Permit to Work" subtitle="Raise a permit for approval by Engineering & Operations" tourId="newpermit-header" />
 
       <form onSubmit={onSubmit} className="space-y-5">
         {/* 1 — Basics */}

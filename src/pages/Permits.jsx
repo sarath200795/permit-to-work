@@ -54,7 +54,7 @@ export default function Permits() {
 
   return (
     <div>
-      <PageHeader icon={FileText} title="Permits" subtitle={isApprover ? 'All permits across your organization' : 'Permits you have raised'}>
+      <PageHeader icon={FileText} title="Permits" subtitle={isApprover ? 'All permits across your organization' : 'Permits you have raised'} tourId="permits-header">
         <Link to="/app/permits/new" className="btn-primary"><Plus size={16} /> New Permit</Link>
       </PageHeader>
 

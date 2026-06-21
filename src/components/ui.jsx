@@ -113,11 +113,12 @@ export function Modal({ open, onClose, title, children, maxWidth = 'max-w-lg' })
 }
 
 // ── Section header ─────────────────────────────────────────────────────────────
-export function PageHeader({ title, subtitle, icon: Icon, children }) {
+export function PageHeader({ title, subtitle, icon: Icon, children, tourId }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
+      data-tour={tourId}
       className="mb-6 flex flex-wrap items-center justify-between gap-4"
     >
       <div className="flex items-center gap-3">
